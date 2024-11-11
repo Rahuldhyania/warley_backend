@@ -248,12 +248,82 @@ const getCustomerByEmail = async (req, res) => {
         res.status(500).json({ message: 'Server error' });
     }
 };
+const delCustomerById = async (req, res) => {
+    try {
+        const { customerId } = req.params; // assuming customer ID is passed as a route parameter
 
+        // Define the GraphQL mutation and variables
+        const query = `
+            mutation customerDelete($id: ID!) {
+                customerDelete(input: {id: $id}) {
+                    shop {
+                        id
+                    }
+                    userErrors {
+                        field
+                        message
+                    }
+                    deletedCustomerId
+                }
+            }
+        `;
+        const variables = {
+            id: `gid://shopify/Customer/${customerId}`
+        };
+
+        // Send the request using axios
+        const response = await axios.post(
+            `https:${process.env.SHOPIFY_APP_URL}/admin/api/2024-10/graphql.json`,
+            {
+                query,
+                variables
+            },
+            {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Shopify-Access-Token': ACCESS_TOKEN
+                }
+            }
+        );
+
+        // Handle the response
+        if (response.data.data.customerDelete.userErrors.length > 0) {
+            return res.status(400).json({
+                success: false,
+                errors: response.data.data.customerDelete.userErrors
+            });
+        }
+
+        // Delete the customer from MongoDB
+        const deletedCustomer = await Customerinfo.findOneAndDelete({ id: parseInt(customerId) });
+
+        if (!deletedCustomer) {
+            return res.status(404).json({
+                success: false,
+                message: 'Customer not found in MongoDB.'
+            });
+        }
+
+        return res.status(200).json({
+            success: true,
+            message: 'Customer successfully deleted from Shopify and MongoDB.',
+            deletedCustomerId: response.data.data.customerDelete.deletedCustomerId
+        });
+    } catch (error) {
+        console.error('Error deleting customer:', error.message);
+        return res.status(500).json({
+            success: false,
+            message: 'An error occurred while deleting the customer.',
+            error: error.message
+        });
+    }
+};
 
 module.exports = {
      customer_Registration_create,
      customer_login,
      requestPasswordReset,
      resetPassword,
-     getCustomerByEmail
+     getCustomerByEmail,
+     delCustomerById
     };
